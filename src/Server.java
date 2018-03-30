@@ -4,17 +4,19 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.Set;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class Server {
     private ServerSocketChannel socketchan;
     private Selector selector;
     private ByteBuffer buff = ByteBuffer.allocate(1024);
-    private Charset charset = Charset.forName("UTF-8");
+    private boolean serverIsRunning = true;
 
-    public Server(String _host, int _port) {
+    private Server(String _host, int _port) {
         InetSocketAddress serverAddress = new InetSocketAddress(_host, _port);
         try {
             socketchan = ServerSocketChannel.open();
@@ -31,21 +33,20 @@ public class Server {
         serviceConnections();
     }
 
-    public void serviceConnections(){
-        boolean serverIsRunning = true;
+    private void serviceConnections(){
 
         while (serverIsRunning){
             try {
                 selector.select();
-                Set keys = selector.keys();
+                Set keys = selector.selectedKeys();
                 Iterator iter = keys.iterator();
-
                 while (iter.hasNext()){
-                    SelectionKey  key = (SelectionKey) iter.next();
+                    SelectionKey key = (SelectionKey) iter.next();
                     iter.remove();
                     if (key.isAcceptable()) {
                         SocketChannel sc = socketchan.accept();
                         sc.configureBlocking(false);
+                        sc.register(selector, SelectionKey.OP_READ);
                         continue;
                     }
                     if (key.isReadable()) {
@@ -59,39 +60,47 @@ public class Server {
                 e.printStackTrace();
             }
         }
+        System.exit(0);
     }
 
     private void serviceRequest(SocketChannel sc) {
-        if (!sc.isOpen()) return;
-
         try {
             sc.read(buff);
+            String req = new String(buff.array(), UTF_8);
 
-            String request = String.valueOf(charset.decode(buff));
-            String[] instructions = request.split(" ");
+            String[] instructions = req.split(" ");
+
             instructions[0].toLowerCase();
 
-            if (instructions.equals("echo")) {
-                System.out.println(request.substring(5));
+            if (instructions[0].equals("echo")) {
+                String toPrint = "";
+                for (int i = 1; i<=instructions.length-2 ;++i){
+                    toPrint += instructions[i] +" ";
+                }
+                System.out.println(toPrint);
             }
-            else if (instructions.equals("calculate") || instructions.equals("calc")) {
+            else if (instructions[0].equals("calculate") || instructions[0].equals("calc")) {
                 double result = 0;
+                double one = Double.parseDouble(instructions[1]);
+                double two = Double.parseDouble(instructions[3]);
                 switch (instructions[2].charAt(0)) {
                     case '+':
-                        result = Double.parseDouble(instructions[1]) + Double.parseDouble(instructions[3]);
+                        result = one + two;
                         break;
                     case '-':
-                        result = Double.parseDouble(instructions[1]) - Double.parseDouble(instructions[3]);
+                        result = one - two;
                         break;
                     case '*':
-                        result = Double.parseDouble(instructions[1]) * Double.parseDouble(instructions[3]);
+                        result = one * two;
                         break;
                     case '/':
-                        result = Double.parseDouble(instructions[1]) / Double.parseDouble(instructions[3]);
+                        result = one / two;
                         break;
                 }
-
                 System.out.println(instructions[1]+" "+instructions[2]+" "+instructions[3]+" = "+result);
+                buff.clear();
+                buff = StandardCharsets.UTF_8.encode(result+" ");
+                sc.write(buff);
             }
         } catch (Exception e) {
             e.printStackTrace();
